@@ -12,6 +12,8 @@ def get_tophat_args(opt, isCT):
   --library-type will be added because the mapping will require
   bisulfite converted reads to be mapped to only one strand.
   """
+  if not opt.pars:
+    opt.pars = ""
   if opt.pars.find("--library-type") == -1:
     l = opt.pars.split()
     if isCT:
@@ -20,7 +22,13 @@ def get_tophat_args(opt, isCT):
       l += ["--library-type", "fr-secondstrand"]
 
   if opt.pars.find("-o") == -1 or opt.pars.find("--output-dir") == -1:
-    l += ["-o", opt.outdir]
+    if isCT:
+      l += ["-o", opt.tophat_dir_CT]
+    else:
+      l += ["-o", opt.tophat_dir_GA]
+  else:
+    logging.error("Please do not specify -o for tophat parameter.")
+    sys.exit(1)
 
   return l
 
@@ -43,18 +51,20 @@ def map_reads(opt, files):
   args_ga += args_reads_ga
 
   logging.info("Mapping reads to C to T converted genome...")
+  logging.info("Command: %s"%" ".join(args_ct))
   try:
     subprocess.check_call(args_ct)
   except subprocess.CalledProcessError:
-    logging.error("An error occured in tophat mapping.",\
+    logging.error("An error occured in tophat mapping. " + 
       "Please check your arguments:\n%s"%" ".join(args_ct))
     sys.exit(1)
 
   logging.info("Mapping reads to G to A converted genome...")
+  logging.info("Command: %s"%" ".join(args_ga))
   try:
     subprocess.check_call(args_ga)
   except subprocess.CalledProcessError:
-    logging.error("An error occured in tophat mapping.",\
+    logging.error("An error occured in tophat mapping. " +
       "Please check your arguments:\n%s"%" ".join(args_ga))
     sys.exit(1)
 
@@ -62,34 +72,36 @@ def check_genome_index(opt):
   """Check if the bowtie2 genome indices for tophat are ready.
   Will check if CT and GA converted genomes exist.
   """
-  if not os.path.exists(opt.index.rstrip("/") + "/C_to_T/C_to_T.1.bt2"):
+  opt.ctindex = opt.index.rstrip("/") + "/CTgenome/CTgenome"
+  opt.gaindex = opt.index.rstrip("/") + "/GAgenome/GAgenome"
+
+  if not os.path.isfile(opt.ctindex + ".1.bt2"):
     logging.error("C to T genome index is not found. Please check -i parameter!")
     logging.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
     sys.exit(1)
-  if not os.path.exists(opt.index.rstrip("/") + "/G_to_A/G_to_A.1.bt2"):
+  if not os.path.isfile(opt.gaindex + ".1.bt2"):
     logging.error("G to A genome index is not found. Please check -i parameter!")
     logging.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
     sys.exit(1)
 
-  opt.ctindex = opt.index.rstrip("/") + "/C_to_T/C_to_T"
-  opt.gaindex = opt.index.rstrip("/") + "/G_to_A/G_to_A"
-
-def bs_conversion(inf, outf, C_to_T, mate):
+def bs_conversion(infh, outfh, C_to_T, mate):
   """Convert FASTQ files using bisulfite rules.
   """
-  inf.seek(0)
+  infh.seek(0)
   counter = 0
-  for l in inf:
+  for l in infh:
     ind = counter%4
     if ind == 0:
-      outf.write(l.strip() + "/%d\n"%mate)
+      # It seems that read pairs without unique siffices also works. So why add them?
+      #outfh.write(l.strip() + "/%d\n"%mate)
+      outfh.write(l)
     elif ind == 1:
       if C_to_T:
-        outf.write(l.replace("C","T"))
+        outfh.write(l.replace("C","T"))
       else:
-        outf.write(l.replace("G","A"))
+        outfh.write(l.replace("G","A"))
     else:
-      outf.write(l)
+      outfh.write(l)
     counter += 1
 
 def init_files_paths(opt):
@@ -125,45 +137,79 @@ def init_files_paths(opt):
     sys.exit(1)
 
   logging.info("Performing read conversion for mapping.")
-  fhs["read1CT"] = open(files["read1CT"], 'w')
-  fhs["read1GA"] = open(files["read1GA"], 'w')
-  bs_conversion(fhs["read1"], fhs["read1CT"], True, 1)
-  bs_conversion(fhs["read1"], fhs["read1GA"], False, 1)
+  if os.path.isfile(files["read1CT"]):
+    logging.warn("%s exists and is skipped."%files["read1CT"])
+  else:
+    fhs["read1CT"] = open(files["read1CT"], 'w')
+    bs_conversion(fhs["read1"], fhs["read1CT"], True, 1)
+  if os.path.isfile(files["read1GA"]):
+    logging.warn("%s exists and is skipped."%files["read1GA"])
+  else:
+    fhs["read1GA"] = open(files["read1GA"], 'w')
+    bs_conversion(fhs["read1"], fhs["read1GA"], False, 1)
 
   if opt.isPairEnd:
-    fhs["read2CT"] = open(files["read2CT"], 'w')
-    fhs["read2GA"] = open(files["read2GA"], 'w')
-    bs_conversion(fhs["read2"], fhs["read2CT"], True, 2)
-    bs_conversion(fhs["read2"], fhs["read2GA"], False, 2)
+    if os.path.isfile(files["read2CT"]):
+      logging.warn("%s exists and is skipped."%files["read2CT"])
+    else:
+      fhs["read2CT"] = open(files["read2CT"], 'w')
+      bs_conversion(fhs["read2"], fhs["read2CT"], True, 2)
+    if os.path.isfile(files["read2GA"]):
+      logging.warn("%s exists and is skipped."%files["read2GA"])
+    else:
+      fhs["read2GA"] = open(files["read2GA"], 'w')
+      bs_conversion(fhs["read2"], fhs["read2GA"], False, 2)
 
   for fh in fhs.values():
-    fh.close()
+    if fh:
+      fh.close()
 
   return files
+
+def is_exe(file):
+  return os.path.isfile(file) and os.access(file, os.X_OK)
+
+def which(program):
+  """Do the same thing as linux "which" command.
+  """
+  for path in os.environ["PATH"].split(os.pathsep):
+    path = path.strip('"')
+    exe_file = os.path.join(path, program)
+    if is_exe(exe_file):
+      return exe_file
+
+  return None
 
 def opt_validation(parser, opt):
   if not opt.mate1 and not opt.tophat and not opt.samtools:
     parser.print_help()
     sys.exit(0)
   if not opt.tophat:
-    logging.error("Must set the path to tophat executable with --tophat!")
-    parser.print_help()
-    sys.exit(1)
-  if not (os.path.isfile(opt.tophat) and os.access(opt.tophat, os.X_OK)):
+    if which("tophat"):
+      opt.tophat = which("tophat")
+      logging.warn("--tophat is not specified but found. %s will be used."\
+        %opt.tophat)
+    else:
+      logging.error("Must set the path to tophat executable with --tophat!")
+      sys.exit(1)
+  if not is_exe(opt.tophat):
     logging.error(\
       "%s is not tophat executable file. Please check your path!"%opt.tophat)
     sys.exit(1)
   if not opt.samtools:
-    logging.error("Must set the path to samtools executable with --samtools!")
-    parser.print_help()
-    sys.exit(1)
-  if not (os.path.isfile(opt.samtools) and os.access(opt.samtools, os.X_OK)):
+    if which("samtools"):
+      opt.samtools = which("samtools")
+      logging.warn("--samtools is not specified but found. %s will be used."\
+        %opt.samtools)
+    else:
+      logging.error("Must set the path to samtools executable with --samtools!")
+      sys.exit(1)
+  if not is_exe(opt.samtools):
     logging.error(\
       "%s is not samtools executable file. Please check your path!"%opt.samtools)
     sys.exit(1)
   if not opt.mate1:
     logging.error("Please specify at least one FASTQ file using -1.")
-    parser.print_help()
     sys.exit(1)
   if not opt.mate2:
     opt.isPairEnd = False
@@ -191,7 +237,7 @@ def main():
     dest="index", metavar="<DIR>",\
     help="Path to bowtie2 genome indices to be used in mapping.")
   parser.add_option("--tophat", action="store", type="string",
-    dest="tophat", help="Path to tophat.")
+    dest="tophat", help="Path to tophat executable program.", metavar="<FILE>")
   parser.add_option("--samtools", action="store", type="string",
     dest="samtools", help="Path to samtools.")
   (opt, args) = parser.parse_args(sys.argv)
@@ -205,7 +251,7 @@ def main():
   opt_validation(parser, opt)
 
   # Initialization of files names, file handlers, temporary directory,
-  # option check, path check, etc.
+  # option check, path check, etc. Also do BS convert for reads.
   check_genome_index(opt)
   logging.info("Output directory is set to %s"%opt.outdir)
   files = init_files_paths(opt)
