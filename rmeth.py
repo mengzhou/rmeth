@@ -27,6 +27,88 @@ import sys, os, re
 import logging, subprocess
 from optparse import OptionParser
 
+def read_fastq(infh):
+  """Read FASTQ file and return read name and read sequence.
+  """
+  l = infh.readline()
+  if not l:
+    return (None, None)
+  if not l.startswith("@"):
+    logging.error("Corrupted FASTQ file!")
+    sys.exit(1)
+  else:
+    name = l[1:].strip()
+
+  l = infh.readline()
+  seq = l.strip()
+  # these two lines for quality score is not needed
+  l = infh.readline()
+  l = infh.readline()
+  return (name, seq)
+
+def SAM_isPairend_mate1(flag):
+  return flag & 0x1 and flag & 0x40
+
+def SAM_isPairend_mate2(flag):
+  return flag & 0x1 and flag & 0x80
+
+def replace_sam_sequence_pe(inf_sam, inf_fastq_mate1, inf_fastq_mate2):
+  """Replace read sequence of input SAM file by their original ones
+  in FASTQ.
+  """
+  samfh = open(inf_sam, 'r')
+  fastqfh_mate1 = open(inf_fastq_mate1, 'r')
+  fastqfh_mate2 = open(inf_fastq_mate2, 'r')
+  (fastq_mate1_name, fastq_mate1_seq) = read_fastq(fastqfh_mate1)
+  fastq_name_mate1 = fastq_read_name_process(fastq_name_mate1, 1)
+  (fastq_mate2_name, fastq_mate2_seq) = read_fastq(fastqfh_mate2)
+  fastq_name_mate2 = fastq_read_name_process(fastq_name_mate2, 2)
+
+  for l in samfh:
+    if l.startswith("@"):
+      pass
+    else:
+      f = l.split("\t")
+      name = f[0]
+      seq = f[9]
+      flag = int(f[1])
+      while fastq_name and fastq_name != name:
+        (fastq_name, fastq_seq) = read_fastq(fastqfh)
+        fastq_name = fastq_read_name_process(fastq_name, mate)
+
+def construct_mapped_reads(opt, files):
+  """Filter mapped reads (BAM file) using preset parameters in samtools.
+  Then replace the converted sequences with their original ones from FASTQ.
+  """
+  # set temporary file names. It seems that python does not provide a
+  # good solution for real-time pipe handling, so I'm using temp file
+  files["mappedCTtmp"] = files["mappedCT"] + ".%d.tmp"%os.getpid()
+  files["mappedGAtmp"] = files["mappedGA"] + ".%d.tmp"%os.getpid()
+
+  # -q INT: minimum mapping quality, set to 10 for < 0.1 error rate
+  # -F INT: set to 256 to filter out secondary alignment specifically
+  samtools_args_ct = [opt.samtools, "view", "-q", "10", \
+    "-F", "256", "-h", "-o", files["mappedCTtmp"], files["mappedCT"]]
+  samtools_args_ga = [opt.samtools, "view", "-q", "10", \
+    "-F", "256", "-h", "-o", files["mappedGAtmp"], files["mappedGA"]]
+
+  logging.info("Reading mapped BAM file %s with samtools."%files["mappedCT"])
+  try:
+    subprocess.check_call(samtools_args_ct)
+  except subprocess.CalledProcessError:
+    logging.error("An error occured in samtools loading %s."%files["mappedCT"])
+    sys.exit(1)
+  logging.info("Reading mapped BAM file %s with samtools."%files["mappedGA"])
+  try:
+    subprocess.check_call(samtools_args_ga)
+  except subprocess.CalledProcessError:
+    logging.error("An error occured in samtools loading %s."%files["mappedGA"])
+    sys.exit(1)
+
+  logging.info("Processing mapped reads of %s..."%files["mappedCT"])
+  replace_sam_sequence_pe(files["mappedCT"], files["read1"], files["read2"])
+  logging.info("Processing mapped reads of %s..."%files["mappedGA"])
+
 def get_tophat_args(opt, isCT):
   """Parse tophat parameters to a list that will be used for
   subprocess system call.
@@ -89,6 +171,20 @@ def map_reads(opt, files):
       "Please check your arguments:\n%s"%" ".join(args_ga))
     sys.exit(1)
 
+  # Try to locate mapped read files after tophat is done
+  if os.path.isfile(opt.tophat_dir_CT + "/accepted_hits.bam"):
+    files["mappedCT"] = opt.tophat_dir_CT + "/accepted_hits.bam"
+  else:
+    logging.error("No mapped file found for C to T converted genome" +
+        "Some error might have occured during tophat run.")
+    sys.exit(1)
+  if os.path.isfile(opt.tophat_dir_GA + "/accepted_hits.bam"):
+    files["mappedGA"] = opt.tophat_dir_GA + "/accepted_hits.bam"
+  else:
+    logging.error("No mapped file found for G to A converted genome" +
+        "Some error might have occured during tophat run.")
+    sys.exit(1)
+
 def check_genome_index(opt):
   """Check if the bowtie2 genome indices for tophat are ready.
   Will check if CT and GA converted genomes exist.
@@ -105,6 +201,12 @@ def check_genome_index(opt):
     logging.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
     sys.exit(1)
 
+def fastq_read_name_process(name, mate):
+  """Process read name in FASTQ files. Main purpose is to deal with spaces and
+  add mate tag in pair-end data.
+  """
+  return name.replace(" ", "_")
+
 def bs_conversion(infh, outfh, C_to_T, mate):
   """Convert FASTQ files using bisulfite rules.
   """
@@ -115,7 +217,8 @@ def bs_conversion(infh, outfh, C_to_T, mate):
     if ind == 0:
       # It seems that read pairs without unique siffices also works. So why add them?
       #outfh.write(l.strip() + "/%d\n"%mate)
-      outfh.write(l)
+      # I think it is necessary to remove spaces in read name
+      outfh.write(fastq_read_name_process(l, mate)))
     elif ind == 1:
       if C_to_T:
         outfh.write(l.replace("C","T"))
@@ -280,8 +383,15 @@ def main():
   # Map reads using tophat
   map_reads(opt, files)
 
-  # Load original FASTQ file, mapped reads, and the genome to determin methylation
+  # Things below need to be done with C++
+  #######################################
+  # Filter mapped reads with some quality threshold, and replace the
+  # converted sequences to their original ones from FASTQ
+  #construct_mapped_reads(opt, files)
+
+  # Load original FASTQ file and the genome to determine methylation
   #GetMethylationLevel()
+  #######################################
 
   # Output and cleanup
 
