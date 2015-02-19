@@ -62,10 +62,12 @@ def bs_conversion(infh, outfh, C_to_T):
   infh.seek(0)
   for l in infh:
     if l.startswith(">"):
-      if C_to_T:
-        outfh.write(l.strip() + "_CT\n")
-      else:
-        outfh.write(l.strip() + "_GA\n")
+      # cannot change chr name otherwise won't be able to use GTF annotation
+      #if C_to_T:
+      #  outfh.write(l.strip() + "_CT\n")
+      #else:
+      #  outfh.write(l.strip() + "_GA\n")
+      outfh.write(l)
     else:
       l = l.upper()
       if C_to_T:

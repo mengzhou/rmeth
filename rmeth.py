@@ -27,7 +27,7 @@ import sys, os, re
 import logging, subprocess
 from optparse import OptionParser
 
-def read_fastq(infh):
+def read_fastq_one_read(infh):
   """Read FASTQ file and return read name and read sequence.
   """
   l = infh.readline()
@@ -46,22 +46,52 @@ def read_fastq(infh):
   l = infh.readline()
   return (name, seq)
 
+def read_fastq_all_reads(infh):
+  """Read FASTQ file and return a dictionary with read name and 
+  corresponding read sequence.
+  """
+  read_name_sequence = {}
+  counter = 0
+  for l in infh:
+    ind = counter%4
+    if ind == 0:
+      name = l[1:].strip().replace(" ", "_")
+    elif ind == 1:
+      read_name_sequence[name] = l.strip()
+    counter += 1
+
+  return read_name_sequence
+
 def SAM_isPairend_mate1(flag):
   return flag & 0x1 and flag & 0x40
 
 def SAM_isPairend_mate2(flag):
   return flag & 0x1 and flag & 0x80
 
-def replace_sam_sequence_pe(inf_sam, inf_fastq_mate1, inf_fastq_mate2):
+def replace_sam_sequence_se(inf_sam, read_name_seq):
+  """Replace read sequence of input SAM file by their original ones
+  in FASTQ.
+  """
+  samfh = open(inf_sam, 'r')
+  for l in samfh:
+    if l.startswith("@"):
+      pass
+    else:
+      f = l.split("\t")
+      name = f[0]
+      seq = f[9]
+
+
+def replace_sam_sequence_pe(inf_sam, read_name_seq, read_name_seq_mate2):
   """Replace read sequence of input SAM file by their original ones
   in FASTQ.
   """
   samfh = open(inf_sam, 'r')
   fastqfh_mate1 = open(inf_fastq_mate1, 'r')
   fastqfh_mate2 = open(inf_fastq_mate2, 'r')
-  (fastq_mate1_name, fastq_mate1_seq) = read_fastq(fastqfh_mate1)
+  (fastq_mate1_name, fastq_mate1_seq) = read_fastq_one_read(fastqfh_mate1)
   fastq_name_mate1 = fastq_read_name_process(fastq_name_mate1, 1)
-  (fastq_mate2_name, fastq_mate2_seq) = read_fastq(fastqfh_mate2)
+  (fastq_mate2_name, fastq_mate2_seq) = read_fastq_one_read(fastqfh_mate2)
   fastq_name_mate2 = fastq_read_name_process(fastq_name_mate2, 2)
 
   for l in samfh:
@@ -73,7 +103,7 @@ def replace_sam_sequence_pe(inf_sam, inf_fastq_mate1, inf_fastq_mate2):
       seq = f[9]
       flag = int(f[1])
       while fastq_name and fastq_name != name:
-        (fastq_name, fastq_seq) = read_fastq(fastqfh)
+        (fastq_name, fastq_seq) = read_fastq_one_read(fastqfh)
         fastq_name = fastq_read_name_process(fastq_name, mate)
 
 def construct_mapped_reads(opt, files):
@@ -82,8 +112,9 @@ def construct_mapped_reads(opt, files):
   """
   # set temporary file names. It seems that python does not provide a
   # good solution for real-time pipe handling, so I'm using temp file
-  files["mappedCTtmp"] = files["mappedCT"] + ".%d.tmp"%os.getpid()
-  files["mappedGAtmp"] = files["mappedGA"] + ".%d.tmp"%os.getpid()
+  files["mergedBAM"] = opt.outdir + "/merged.bam.tmp%d"%os.getpid()
+  try:
+    subprocess.check_call([opt.samtools, "merge", )
 
   # -q INT: minimum mapping quality, set to 10 for < 0.1 error rate
   # -F INT: set to 256 to filter out secondary alignment specifically
@@ -92,22 +123,37 @@ def construct_mapped_reads(opt, files):
   samtools_args_ga = [opt.samtools, "view", "-q", "10", \
     "-F", "256", "-h", "-o", files["mappedGAtmp"], files["mappedGA"]]
 
-  logging.info("Reading mapped BAM file %s with samtools."%files["mappedCT"])
+  logging.info("Filtering mapped BAM file %s with samtools."%files["mappedCT"])
   try:
     subprocess.check_call(samtools_args_ct)
   except subprocess.CalledProcessError:
     logging.error("An error occured in samtools loading %s."%files["mappedCT"])
     sys.exit(1)
-  logging.info("Reading mapped BAM file %s with samtools."%files["mappedGA"])
+  logging.info("Filtering mapped BAM file %s with samtools."%files["mappedGA"])
   try:
     subprocess.check_call(samtools_args_ga)
   except subprocess.CalledProcessError:
     logging.error("An error occured in samtools loading %s."%files["mappedGA"])
     sys.exit(1)
 
-  logging.info("Processing mapped reads of %s..."%files["mappedCT"])
-  replace_sam_sequence_pe(files["mappedCT"], files["read1"], files["read2"])
-  logging.info("Processing mapped reads of %s..."%files["mappedGA"])
+  logging.info("Loading FASTQ file %s..."%files["read1"])
+  read_name_seq = read_fastq_all_reads(files["read1"])
+  if opt.isPairEnd:
+    logging.info("Loading FASTQ file %s..."%files["read1"])
+    read_name_seq_mate2 = read_fastq_all_reads(files["read2"])
+
+  logging.info("Processing mapped reads (1/2) %s..."%files["mappedCT"])
+  if opt.isPairEnd:
+    replace_sam_sequence_pe(files["mappedCTtmp"], \
+      read_name_seq, read_name_seq_mate2)
+  else:
+    replace_sam_sequence_se(files["mappedCTtmp"], read_name_seq)
+  logging.info("Processing mapped reads (2/2) %s..."%files["mappedGA"])
+  if opt.isPairEnd:
+    replace_sam_sequence_pe(files["mappedGAtmp"], \
+      read_name_seq, read_name_seq_mate2)
+  else:
+    replace_sam_sequence_se(files["mappedGAtmp"], read_name_seq)
 
 def get_tophat_args(opt, isCT):
   """Parse tophat parameters to a list that will be used for
@@ -218,7 +264,7 @@ def bs_conversion(infh, outfh, C_to_T, mate):
       # It seems that read pairs without unique siffices also works. So why add them?
       #outfh.write(l.strip() + "/%d\n"%mate)
       # I think it is necessary to remove spaces in read name
-      outfh.write(fastq_read_name_process(l, mate)))
+      outfh.write(fastq_read_name_process(l, mate))
     elif ind == 1:
       if C_to_T:
         outfh.write(l.replace("C","T"))
@@ -253,12 +299,17 @@ def init_files_paths(opt):
     files["read2GA"] = re.sub("\.fastq|\.fq","",opt.mate2) + "_GA.fastq"
   try:
     fhs["read1"] = open(files["read1"], 'r')
-    if opt.isPairEnd:
-      fhs["read2"] = open(files["read2"], 'r')
   except:
-    logging.error("Failed to open FASTQ file(s): %s."\
-        %" ".join((files["read1"], files["read2"])))
+    logging.error("Failed to open FASTQ file: %s."\
+        %files["read1"])
     sys.exit(1)
+  if opt.isPairEnd:
+    try:
+      fhs["read2"] = open(files["read2"], 'r')
+    except:
+      logging.error("Failed to open FASTQ file: %s."\
+          %files["read2"])
+      sys.exit(1)
 
   logging.info("Performing read conversion for mapping.")
   if os.path.isfile(files["read1CT"]):
