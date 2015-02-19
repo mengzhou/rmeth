@@ -26,6 +26,7 @@
 import sys, os, re
 import logging, subprocess
 from optparse import OptionParser
+from random import choice
 
 def read_fastq_one_read(infh):
   """Read FASTQ file and return read name and read sequence.
@@ -68,19 +69,42 @@ def SAM_isPairend_mate1(flag):
 def SAM_isPairend_mate2(flag):
   return flag & 0x1 and flag & 0x80
 
+def filter_multi_mapping( list_of_candidates ):
+  """Choose one from all ambiguously mapped reads.
+  Now just randomly choose.
+  """
+  return choice(list_of_candidates)
+
+def sam_to_mr( sam_fields ):
+  """Convert SAM format to MappedRead. Input is list of SAM fields.
+  """
+
 def replace_sam_sequence_se(inf_sam, read_name_seq):
   """Replace read sequence of input SAM file by their original ones
   in FASTQ.
   """
   samfh = open(inf_sam, 'r')
-  for l in samfh:
+  read_pool = []
+  last_name = ""
+  name = ""
+  l = samfh.readline()
+  while l:
     if l.startswith("@"):
       pass
     else:
       f = l.split("\t")
       name = f[0]
-      seq = f[9]
+      if name != last_name:
+        best_read = filter_multi_mapping(read_pool)
+        best_read[9] = read_name_seq.pop(last_name)
+        sam_to_mr(best_read)
+        read_pool = f
+      else:
+        read_pool.append(f)
+    last_name = name
+    l = samfh.readline()
 
+  sam_to_mr(read_pool, read_name_seq.pop(name))
 
 def replace_sam_sequence_pe(inf_sam, read_name_seq, read_name_seq_mate2):
   """Replace read sequence of input SAM file by their original ones
@@ -112,16 +136,28 @@ def construct_mapped_reads(opt, files):
   """
   # set temporary file names. It seems that python does not provide a
   # good solution for real-time pipe handling, so I'm using temp file
-  files["mergedBAM"] = opt.outdir + "/merged.bam.tmp%d"%os.getpid()
-  try:
-    subprocess.check_call([opt.samtools, "merge", )
 
+  # 1. merge the mapped files
+  files["mergedBAM"] = opt.outdir + "/merged.bam.tmp%d"%os.getpid()
+  samtools_args = [opt.samtools, "merge", files["mergedBAM"],\
+      files["mappedCT"], files["mappedGA"]]
+  try:
+    subprocess.check_call(samtools_args)
+  except subprocess.CalledProcessError:
+    logging.error("An error occured in samtools merging.")
+    sys.exit(1)
+
+  # 2. filter the merged file
   # -q INT: minimum mapping quality, set to 10 for < 0.1 error rate
   # -F INT: set to 256 to filter out secondary alignment specifically
-  samtools_args_ct = [opt.samtools, "view", "-q", "10", \
-    "-F", "256", "-h", "-o", files["mappedCTtmp"], files["mappedCT"]]
-  samtools_args_ga = [opt.samtools, "view", "-q", "10", \
-    "-F", "256", "-h", "-o", files["mappedGAtmp"], files["mappedGA"]]
+  files["filteredSAM"] = opt.outdir + "/filtered.sam.tmp%d"%os.getpid()
+  samtools_args = [opt.samtools, "view", "-q", "10", \
+    "-F", "256", "-o", files["filteredSAM"], files["mergedBAM"]]
+  try:
+    subprocess.check_call(samtools_args)
+  except subprocess.CalledProcessError:
+    logging.error("An error occured in samtools filtering.")
+    sys.exit(1)
 
   logging.info("Filtering mapped BAM file %s with samtools."%files["mappedCT"])
   try:
@@ -129,12 +165,7 @@ def construct_mapped_reads(opt, files):
   except subprocess.CalledProcessError:
     logging.error("An error occured in samtools loading %s."%files["mappedCT"])
     sys.exit(1)
-  logging.info("Filtering mapped BAM file %s with samtools."%files["mappedGA"])
-  try:
-    subprocess.check_call(samtools_args_ga)
-  except subprocess.CalledProcessError:
-    logging.error("An error occured in samtools loading %s."%files["mappedGA"])
-    sys.exit(1)
+  os.remove(files["mergedBAM"])
 
   logging.info("Loading FASTQ file %s..."%files["read1"])
   read_name_seq = read_fastq_all_reads(files["read1"])
@@ -142,18 +173,12 @@ def construct_mapped_reads(opt, files):
     logging.info("Loading FASTQ file %s..."%files["read1"])
     read_name_seq_mate2 = read_fastq_all_reads(files["read2"])
 
-  logging.info("Processing mapped reads (1/2) %s..."%files["mappedCT"])
+  logging.info("Processing mapped reads"%files["filteredSAM"])
   if opt.isPairEnd:
-    replace_sam_sequence_pe(files["mappedCTtmp"], \
+    replace_sam_sequence_pe(files["filteredSAM"], \
       read_name_seq, read_name_seq_mate2)
   else:
-    replace_sam_sequence_se(files["mappedCTtmp"], read_name_seq)
-  logging.info("Processing mapped reads (2/2) %s..."%files["mappedGA"])
-  if opt.isPairEnd:
-    replace_sam_sequence_pe(files["mappedGAtmp"], \
-      read_name_seq, read_name_seq_mate2)
-  else:
-    replace_sam_sequence_se(files["mappedGAtmp"], read_name_seq)
+    replace_sam_sequence_se(files["filteredSAM"], read_name_seq)
 
 def get_tophat_args(opt, isCT):
   """Parse tophat parameters to a list that will be used for
