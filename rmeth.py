@@ -28,6 +28,138 @@ import logging, subprocess
 from optparse import OptionParser
 from random import choice
 
+class Files:
+  def __init__(opt):
+    self._wd = opt.outdir
+    self._wd_read1CT_to_CT = opt.mapped_dir_read1CT_to_CT
+    self._wd_read1CT_to_GA = opt.mapped_dir_read1CT_to_GA
+    name1 = re.match("(.+)(\.fastq|\.fq)", opt.read1).group(1)
+    # original fastq files
+    self._fn_read1 = opt.read1
+    self._fn_read2 = opt.read2
+    # converted fastq files
+    self._fn_read1CT = self._wd + "/%s_CT.fastq"%name1
+    # original mapped bam files
+    self._fn_read1CT_to_CT = self._wd + opt.mapped_dir_read1CT_to_CT \
+      + ".Aligned.out.bam"
+    self._fn_read1CT_to_GA = self._wd + opt.mapped_dir_read1CT_to_GA \
+      + ".Aligned.out.bam"
+    # bam files with only primary mapping
+    self._fn_read1CT_to_CT_primary = re.match("(.+)\.bam", \
+      self._fn_read1CT_to_CT).group(1) + "primary.bam"
+    self._fn_read1CT_to_GA_primary = re.match("(.+)\.bam", \
+      self._fn_read1CT_to_GA).group(1) + "primary.bam"
+    # bam files with compatible strand
+    self._fn_read1CT_to_CT_compatible = re.match("(.+)\.bam", \
+      self._fn_read1CT_to_CT).group(1) + "compatible.bam"
+    self._fn_read1CT_to_GA_compatible = re.match("(.+)\.bam", \
+      self._fn_read1CT_to_GA).group(1) + "compatible.bam"
+
+    if not opt.directional:
+      # converted fastq files
+      self._fn_read1GA = self._wd + "/%s_GA.fastq"%name1
+      # original mapped bam files
+      self._fn_read1GA_to_CT = self._wd + opt.mapped_dir_read1GA_to_CT \
+        + ".Aligned.out.bam"
+      self._fn_read1GA_to_GA = self._wd + opt.mapped_dir_read1GA_to_GA \
+        + ".Aligned.out.bam"
+      # bam files with only primary mapping
+      self._fn_read1GA_to_CT_primary = re.match("(.+)\.bam", \
+        self._fn_read1GA_to_CT).group(1) + "primary.bam"
+      self._fn_read1GA_to_GA_primary = re.match("(.+)\.bam", \
+        self._fn_read1GA_to_GA).group(1) + "primary.bam"
+      # bam files with compatible strand
+      self._fn_read1GA_to_CT_compatible = re.match("(.+)\.bam", \
+        self._fn_read1GA_to_CT).group(1) + "compatible.bam"
+      self._fn_read1GA_to_GA_compatible = re.match("(.+)\.bam", \
+        self._fn_read1GA_to_GA).group(1) + "compatible.bam"
+
+    # merged bam file
+    self._fn_read1_merged_bam = self._wd + "/%s.merged.bam"%(name1)
+
+    if opt.isPairEnd:
+      name2 = re.match("(.+)(\.fastq|\.fq)", opt.read2).group(1)
+      # converted fastq files
+      self._fn_read2GA = self._wd + "/%s_CT.fastq"%name2
+      # original mapped bam files
+      self._fn_read2GA_to_CT = self._wd + opt.mapped_dir_read2GA_to_CT \
+        + ".Aligned.out.bam"
+      self._fn_read2GA_to_GA = self._wd + opt.mapped_dir_read2GA_to_GA \
+        + ".Aligned.out.bam"
+      # bam files with only primary mapping
+      self._fn_read2GA_to_CT_primary = re.match("(.+)\.bam", \
+        self._fn_read2GA_to_CT).group(1) + "primary.bam"
+      self._fn_read2GA_to_GA_primary = re.match("(.+)\.bam", \
+        self._fn_read2GA_to_GA).group(1) + "primary.bam"
+      # bam files with compatible strand
+      self._fn_read2GA_to_CT_compatible = re.match("(.+)\.bam", \
+        self._fn_read2GA_to_CT).group(1) + "compatible.bam"
+      self._fn_read2GA_to_GA_compatible = re.match("(.+)\.bam", \
+        self._fn_read2GA_to_GA).group(1) + "compatible.bam"
+
+      # merged bam file
+      self._fn_read2CT_merged_bam = self._wd + "/%s.merged.bam"%(name2)
+
+      if not opt.directional:
+        # converted fastq files
+        self._fn_read2CT = self._wd + "/%s_GA.fastq"%name1
+        # original mapped bam files
+        self._fn_read2CT_to_CT = self._wd + opt.mapped_dir_read2CT_to_CT \
+          + ".Aligned.out.bam"
+        self._fn_read2CT_to_GA = self._wd + opt.mapped_dir_read2CT_to_GA \
+          + ".Aligned.out.bam"
+        # bam files with only primary mapping
+        self._fn_read2CT_to_CT_primary = re.match("(.+)\.bam", \
+          self._fn_read2CT_to_CT).group(1) + "primary.bam"
+        self._fn_read2CT_to_GA_primary = re.match("(.+)\.bam", \
+          self._fn_read2CT_to_GA).group(1) + "primary.bam"
+        # bam files with compatible strand
+        self._fn_read2CT_to_CT_compatible = re.match("(.+)\.bam", \
+          self._fn_read2CT_to_CT).group(1) + "compatible.bam"
+        self._fn_read2CT_to_GA_compatible = re.match("(.+)\.bam", \
+          self._fn_read2CT_to_GA).group(1) + "compatible.bam"
+
+      # merged bam file
+      self._fn_read1_merged_bam = self._wd + "/%s.merged.bam"%(name1)
+
+    # final output .mr
+    self._fn_mr = self._wd + "/%s.mr"%name1
+
+  def get_file_list(self):
+    fn_list = {"read1":self._fn_read1, "read1CT":self._fn_read1CT, \
+      "read1CT_to_CT":self._fn_read1CT_to_CT, \
+      "read1CT_to_GA":self._fn_read1CT_to_GA, \
+      "read1CT_to_CT_primary":self._fn_read1CT_to_CT_primary, \
+      "read1CT_to_GA_primary":self._fn_read1CT_to_GA_primary, \
+      "read1CT_to_CT_compatible":self._fn_read1CT_to_CT_compatible, \
+      "read1CT_to_GA_compatible":self._fn_read1CT_to_GA_compatible, \
+      "read1GA":self._fn_read1GA, \
+      "read1GA_to_CT":self._fn_read1GA_to_CT, \
+      "read1GA_to_GA":self._fn_read1GA_to_GA, \
+      "read1GA_to_CT_primary":self._fn_read1GA_to_CT_primary, \
+      "read1GA_to_GA_primary":self._fn_read1GA_to_GA_primary, \
+      "read1GA_to_CT_compatible":self._fn_read1GA_to_CT_compatible, \
+      "read1GA_to_GA_compatible":self._fn_read1GA_to_GA_compatible, \
+      "read1_merged_bam":self._fn_read1_merged_bam,\
+      "read2":self._fn_read2, "read2CT":self._fn_read2CT, \
+      "read2GA":self._fn_read2GA, \
+      "read2GA_to_CT":self._fn_read2GA_to_CT, \
+      "read2GA_to_GA":self._fn_read2GA_to_GA, \
+      "read2GA_to_CT_primary":self._fn_read2GA_to_CT_primary, \
+      "read2GA_to_GA_primary":self._fn_read2GA_to_GA_primary, \
+      "read2GA_to_CT_compatible":self._fn_read2GA_to_CT_compatible, \
+      "read2GA_to_GA_compatible":self._fn_read2GA_to_GA_compatible, \
+      "read2CT_to_CT":self._fn_read2CT_to_CT, \
+      "read2CT_to_GA":self._fn_read2CT_to_GA, \
+      "read2CT_to_CT_primary":self._fn_read2CT_to_CT_primary, \
+      "read2CT_to_GA_primary":self._fn_read2CT_to_GA_primary, \
+      "read2CT_to_CT_compatible":self._fn_read2CT_to_CT_compatible, \
+      "read2CT_to_GA_compatible":self._fn_read2CT_to_GA_compatible, \
+      "read2_merged_bam":self._fn_read2_merged_bam, \
+      "mr":self._fn_mr
+      }
+    return fn_list
+
 def read_fastq_one_read(infh):
   """Read FASTQ file and return read name and read sequence.
   """
@@ -35,7 +167,7 @@ def read_fastq_one_read(infh):
   if not l:
     return (None, None)
   if not l.startswith("@"):
-    logging.error("Corrupted FASTQ file!")
+    opt.error("Corrupted FASTQ file!")
     sys.exit(1)
   else:
     name = l[1:].strip()
@@ -63,10 +195,10 @@ def read_fastq_all_reads(infh):
 
   return read_name_sequence
 
-def SAM_isPairend_mate1(flag):
+def SAM_isPairend_read1(flag):
   return flag & 0x1 and flag & 0x40
 
-def SAM_isPairend_mate2(flag):
+def SAM_isPairend_read2(flag):
   return flag & 0x1 and flag & 0x80
 
 def filter_multi_mapping( list_of_candidates ):
@@ -106,17 +238,17 @@ def replace_sam_sequence_se(inf_sam, read_name_seq):
 
   sam_to_mr(read_pool, read_name_seq.pop(name))
 
-def replace_sam_sequence_pe(inf_sam, read_name_seq, read_name_seq_mate2):
+def replace_sam_sequence_pe(inf_sam, read_name_seq, read_name_seq_read2):
   """Replace read sequence of input SAM file by their original ones
   in FASTQ.
   """
   samfh = open(inf_sam, 'r')
-  fastqfh_mate1 = open(inf_fastq_mate1, 'r')
-  fastqfh_mate2 = open(inf_fastq_mate2, 'r')
-  (fastq_mate1_name, fastq_mate1_seq) = read_fastq_one_read(fastqfh_mate1)
-  fastq_name_mate1 = fastq_read_name_process(fastq_name_mate1, 1)
-  (fastq_mate2_name, fastq_mate2_seq) = read_fastq_one_read(fastqfh_mate2)
-  fastq_name_mate2 = fastq_read_name_process(fastq_name_mate2, 2)
+  fastqfh_read1 = open(inf_fastq_read1, 'r')
+  fastqfh_read2 = open(inf_fastq_read2, 'r')
+  (fastq_read1_name, fastq_read1_seq) = read_fastq_one_read(fastqfh_read1)
+  fastq_name_read1 = fastq_read_name_process(fastq_name_read1, 1)
+  (fastq_read2_name, fastq_read2_seq) = read_fastq_one_read(fastqfh_read2)
+  fastq_name_read2 = fastq_read_name_process(fastq_name_read2, 2)
 
   for l in samfh:
     if l.startswith("@"):
@@ -144,7 +276,7 @@ def construct_mapped_reads(opt, files):
   try:
     subprocess.check_call(samtools_args)
   except subprocess.CalledProcessError:
-    logging.error("An error occured in samtools merging.")
+    opt.error("An error occured in samtools merging.")
     sys.exit(1)
 
   # 2. filter the merged file
@@ -156,27 +288,27 @@ def construct_mapped_reads(opt, files):
   try:
     subprocess.check_call(samtools_args)
   except subprocess.CalledProcessError:
-    logging.error("An error occured in samtools filtering.")
+    opt.error("An error occured in samtools filtering.")
     sys.exit(1)
 
-  logging.info("Filtering mapped BAM file %s with samtools."%files["mappedCT"])
+  opt.info("Filtering mapped BAM file %s with samtools."%files["mappedCT"])
   try:
     subprocess.check_call(samtools_args_ct)
   except subprocess.CalledProcessError:
-    logging.error("An error occured in samtools loading %s."%files["mappedCT"])
+    opt.error("An error occured in samtools loading %s."%files["mappedCT"])
     sys.exit(1)
   os.remove(files["mergedBAM"])
 
-  logging.info("Loading FASTQ file %s..."%files["read1"])
+  opt.info("Loading FASTQ file %s..."%files["read1"])
   read_name_seq = read_fastq_all_reads(files["read1"])
   if opt.isPairEnd:
-    logging.info("Loading FASTQ file %s..."%files["read1"])
-    read_name_seq_mate2 = read_fastq_all_reads(files["read2"])
+    opt.info("Loading FASTQ file %s..."%files["read1"])
+    read_name_seq_read2 = read_fastq_all_reads(files["read2"])
 
-  logging.info("Processing mapped reads"%files["filteredSAM"])
+  opt.info("Processing mapped reads"%files["filteredSAM"])
   if opt.isPairEnd:
     replace_sam_sequence_pe(files["filteredSAM"], \
-      read_name_seq, read_name_seq_mate2)
+      read_name_seq, read_name_seq_read2)
   else:
     replace_sam_sequence_se(files["filteredSAM"], read_name_seq)
 
@@ -197,11 +329,11 @@ def get_tophat_args(opt, isCT):
 
   if opt.pars.find("-o") == -1 or opt.pars.find("--output-dir") == -1:
     if isCT:
-      l += ["-o", opt.tophat_dir_CT]
+      l += ["-o", opt.mapper_dir_CT]
     else:
-      l += ["-o", opt.tophat_dir_GA]
+      l += ["-o", opt.mapper_dir_GA]
   else:
-    logging.error("Please do not specify -o for tophat parameter.")
+    opt.error("Please do not specify -o for tophat parameter.")
     sys.exit(1)
 
   return l
@@ -209,10 +341,10 @@ def get_tophat_args(opt, isCT):
 def map_reads(opt, files):
   """Map reads using tophat.
   """
-  args_ct = [opt.tophat]
+  args_ct = [opt.mapper]
   args_ct += get_tophat_args(opt, True)
   args_ct.append(opt.ctindex)
-  args_ga = [opt.tophat]
+  args_ga = [opt.mapper]
   args_ga += get_tophat_args(opt, False)
   args_ga.append(opt.gaindex)
   if opt.isPairEnd:
@@ -224,35 +356,35 @@ def map_reads(opt, files):
   args_ct += args_reads_ct
   args_ga += args_reads_ga
 
-  logging.info("Mapping reads to C to T converted genome...")
-  logging.info("Command: %s"%" ".join(args_ct))
+  opt.info("Mapping reads to C to T converted genome...")
+  opt.info("Command: %s"%" ".join(args_ct))
   try:
     subprocess.check_call(args_ct)
   except subprocess.CalledProcessError:
-    logging.error("An error occured in tophat mapping. " + 
+    opt.error("An error occured in tophat mapping. " + 
       "Please check your arguments:\n%s"%" ".join(args_ct))
     sys.exit(1)
 
-  logging.info("Mapping reads to G to A converted genome...")
-  logging.info("Command: %s"%" ".join(args_ga))
+  opt.info("Mapping reads to G to A converted genome...")
+  opt.info("Command: %s"%" ".join(args_ga))
   try:
     subprocess.check_call(args_ga)
   except subprocess.CalledProcessError:
-    logging.error("An error occured in tophat mapping. " +
+    opt.error("An error occured in tophat mapping. " +
       "Please check your arguments:\n%s"%" ".join(args_ga))
     sys.exit(1)
 
   # Try to locate mapped read files after tophat is done
-  if os.path.isfile(opt.tophat_dir_CT + "/accepted_hits.bam"):
-    files["mappedCT"] = opt.tophat_dir_CT + "/accepted_hits.bam"
+  if os.path.isfile(opt.mapper_dir_CT + "/accepted_hits.bam"):
+    files["mappedCT"] = opt.mapper_dir_CT + "/accepted_hits.bam"
   else:
-    logging.error("No mapped file found for C to T converted genome" +
+    opt.error("No mapped file found for C to T converted genome" +
         "Some error might have occured during tophat run.")
     sys.exit(1)
-  if os.path.isfile(opt.tophat_dir_GA + "/accepted_hits.bam"):
-    files["mappedGA"] = opt.tophat_dir_GA + "/accepted_hits.bam"
+  if os.path.isfile(opt.mapper_dir_GA + "/accepted_hits.bam"):
+    files["mappedGA"] = opt.mapper_dir_GA + "/accepted_hits.bam"
   else:
-    logging.error("No mapped file found for G to A converted genome" +
+    opt.error("No mapped file found for G to A converted genome" +
         "Some error might have occured during tophat run.")
     sys.exit(1)
 
@@ -264,12 +396,12 @@ def check_genome_index(opt):
   opt.gaindex = opt.index.rstrip("/") + "/GAgenome/GAgenome"
 
   if not os.path.isfile(opt.ctindex + ".1.bt2"):
-    logging.error("C to T genome index is not found. Please check -i parameter!")
-    logging.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
+    opt.error("C to T genome index is not found. Please check -i parameter!")
+    opt.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
     sys.exit(1)
   if not os.path.isfile(opt.gaindex + ".1.bt2"):
-    logging.error("G to A genome index is not found. Please check -i parameter!")
-    logging.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
+    opt.error("G to A genome index is not found. Please check -i parameter!")
+    opt.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
     sys.exit(1)
 
 def fastq_read_name_process(name, mate):
@@ -304,58 +436,71 @@ def init_files_paths(opt):
   """
   if not os.path.exists(opt.outdir):
     os.makedirs(opt.outdir)
-  opt.tophat_dir_CT = opt.outdir + "/tophat/CTread_CTgenome"
-  opt.tophat_dir_GA = opt.outdir + "/tophat/GAread_GAgenome"
-  if not os.path.exists(opt.tophat_dir_CT):
-    os.makedirs(opt.tophat_dir_CT)
-  if not os.path.exists(opt.tophat_dir_GA):
-    os.makedirs(opt.tophat_dir_GA)
+  opt.mapped_dir_read1CT_to_CT = opt.outdir + "/read1CT_to_CTgenome"
+  opt.mapped_dir_read1CT_to_GA = opt.outdir + "/read1CT_to_GAgenome"
+  os.makedirs(opt.mapped_dir_read1CT_to_CT)
+  os.makedirs(opt.mapped_dir_read1CT_to_GA)
+  if not opt.directional:
+    opt.mapped_dir_read1GA_to_CT = opt.outdir + "/read1GA_to_CTgenome"
+    opt.mapped_dir_read1GA_to_GA = opt.outdir + "/read1GA_to_GAgenome"
+    os.makedirs(opt.mapped_dir_read1GA_to_CT)
+    os.makedirs(opt.mapped_dir_read1GA_to_GA)
+  if opt.isPairEnd:
+    opt.mapped_dir_read2GA_to_CT = opt.outdir + "/read2GA_to_CTgenome"
+    opt.mapped_dir_read2GA_to_GA = opt.outdir + "/read2GA_to_GAgenome"
+    os.makedirs(opt.mapped_dir_read2GA_to_CT)
+    os.makedirs(opt.mapped_dir_read2GA_to_GA)
+    if not opt.directional:
+      opt.mapped_dir_read2CT_to_CT = opt.outdir + "/read2CT_to_CTgenome"
+      opt.mapped_dir_read2CT_to_GA = opt.outdir + "/read2CT_to_GAgenome"
+      os.makedirs(opt.mapped_dir_read2CT_to_CT)
+      os.makedirs(opt.mapped_dir_read2CT_to_GA)
 
   file_list = ["read1", "read2", "read1CT", "read1GA", "read2CT", "read2GA"]
   files = {}.fromkeys(file_list)
   fhs = {}.fromkeys(file_list)
 
-  files["read1"] = opt.mate1
-  files["read2"] = opt.mate2
-  files["read1CT"] = re.sub("\.fastq|\.fq","",opt.mate1) + "_CT.fastq"
-  files["read1GA"] = re.sub("\.fastq|\.fq","",opt.mate1) + "_GA.fastq"
+  files["read1"] = opt.read1
+  files["read2"] = opt.read2
+  files["read1CT"] = re.sub("\.fastq|\.fq","",opt.read1) + "_CT.fastq"
+  files["read1GA"] = re.sub("\.fastq|\.fq","",opt.read1) + "_GA.fastq"
   if opt.isPairEnd:
-    files["read2CT"] = re.sub("\.fastq|\.fq","",opt.mate2) + "_CT.fastq"
-    files["read2GA"] = re.sub("\.fastq|\.fq","",opt.mate2) + "_GA.fastq"
+    files["read2CT"] = re.sub("\.fastq|\.fq","",opt.read2) + "_CT.fastq"
+    files["read2GA"] = re.sub("\.fastq|\.fq","",opt.read2) + "_GA.fastq"
   try:
     fhs["read1"] = open(files["read1"], 'r')
   except:
-    logging.error("Failed to open FASTQ file: %s."\
+    opt.error("Failed to open FASTQ file: %s."\
         %files["read1"])
     sys.exit(1)
   if opt.isPairEnd:
     try:
       fhs["read2"] = open(files["read2"], 'r')
     except:
-      logging.error("Failed to open FASTQ file: %s."\
+      opt.error("Failed to open FASTQ file: %s."\
           %files["read2"])
       sys.exit(1)
 
-  logging.info("Performing read conversion for mapping.")
+  opt.info("Performing read conversion for mapping.")
   if os.path.isfile(files["read1CT"]):
-    logging.warn("%s exists and is skipped."%files["read1CT"])
+    opt.warn("%s exists and is skipped."%files["read1CT"])
   else:
     fhs["read1CT"] = open(files["read1CT"], 'w')
     bs_conversion(fhs["read1"], fhs["read1CT"], True, 1)
   if os.path.isfile(files["read1GA"]):
-    logging.warn("%s exists and is skipped."%files["read1GA"])
+    opt.warn("%s exists and is skipped."%files["read1GA"])
   else:
     fhs["read1GA"] = open(files["read1GA"], 'w')
     bs_conversion(fhs["read1"], fhs["read1GA"], False, 1)
 
   if opt.isPairEnd:
     if os.path.isfile(files["read2CT"]):
-      logging.warn("%s exists and is skipped."%files["read2CT"])
+      opt.warn("%s exists and is skipped."%files["read2CT"])
     else:
       fhs["read2CT"] = open(files["read2CT"], 'w')
       bs_conversion(fhs["read2"], fhs["read2CT"], True, 2)
     if os.path.isfile(files["read2GA"]):
-      logging.warn("%s exists and is skipped."%files["read2GA"])
+      opt.warn("%s exists and is skipped."%files["read2GA"])
     else:
       fhs["read2GA"] = open(files["read2GA"], 'w')
       bs_conversion(fhs["read2"], fhs["read2GA"], False, 2)
@@ -381,37 +526,45 @@ def which(program):
   return None
 
 def opt_validation(parser, opt):
-  if not opt.mate1 and not opt.tophat and not opt.samtools:
+  if not opt.read1 and not opt.mapper and not opt.samtools:
     parser.print_help()
     sys.exit(0)
-  if not opt.tophat:
-    if which("tophat"):
-      opt.tophat = which("tophat")
-      logging.warn("--tophat is not specified but found. %s will be used."\
-        %opt.tophat)
+  opt.info = opt.info
+  opt.warn = opt.warn
+  opt.error = opt.error
+  if not opt.mapper:
+    if which("tophat2"):
+      opt.mapper = which("tophat2")
+      opt.warn("--mapper is not specified but tophat2 is found. %s will be used."\
+        %opt.mapper)
     else:
-      logging.error("Must set the path to tophat executable with --tophat!")
-      sys.exit(1)
-  if not is_exe(opt.tophat):
-    logging.error(\
-      "%s is not tophat executable file. Please check your path!"%opt.tophat)
+      if which("STAR"):
+        opt.mapper = which("STAR")
+        opt.warn("--mapper is not specified but STAR is found. %s will be used."\
+          %opt.mapper)
+      else:
+        opt.error("Must set the path to mapper executable with --mapper!")
+        sys.exit(1)
+  if not is_exe(opt.mapper):
+    opt.error(\
+      "%s is not an executable file. Please check your path!"%opt.mapper)
     sys.exit(1)
   if not opt.samtools:
     if which("samtools"):
       opt.samtools = which("samtools")
-      logging.warn("--samtools is not specified but found. %s will be used."\
+      opt.warn("--samtools is not specified but found. %s will be used."\
         %opt.samtools)
     else:
-      logging.error("Must set the path to samtools executable with --samtools!")
+      opt.error("Must set the path to samtools executable with --samtools!")
       sys.exit(1)
   if not is_exe(opt.samtools):
-    logging.error(\
+    opt.error(\
       "%s is not samtools executable file. Please check your path!"%opt.samtools)
     sys.exit(1)
-  if not opt.mate1:
-    logging.error("Please specify at least one FASTQ file using -1.")
+  if not opt.read1:
+    opt.error("Please specify at least one FASTQ file using -1.")
     sys.exit(1)
-  if not opt.mate2:
+  if not opt.read2:
     opt.isPairEnd = False
   else:
     opt.isPairEnd = True
@@ -425,21 +578,24 @@ def main():
     default="%s/rmeth"%os.getcwd(), dest="outdir", \
     help="Output directory. Default: ./rmeth", metavar="<string>")
   parser.add_option("-p", "--parameters", action="store", type="string",
-    dest="pars", help="tophat parameters. Must be quoted if space is included.", \
-    metavar="\"<parameter1 [parameter2 ...]>\"")
-  parser.add_option("-1", "--mate1", action="store", type="string",
-    dest="mate1", metavar="<FILE>",\
+    dest="pars", help="Parameters for mapper." + \
+      "Must be quoted because space is included.", \
+    metavar="\"<parameter1 parameter2 ...>\"")
+  parser.add_option("-1", "--read1", action="store", type="string",
+    dest="read1", metavar="<FILE>",\
     help="FASTQ file for read. Mate 1 for pair-end or single-end file.")
-  parser.add_option("-2", "--mate2", action="store", type="string",
-    dest="mate2", metavar="<FILE>", \
+  parser.add_option("-2", "--read2", action="store", type="string",
+    dest="read2", metavar="<FILE>", \
     help="FASTQ file for read. Mate 2 for pair-end. Not neede for single-end.")
   parser.add_option("-i", "--index", action="store", type="string",
     dest="index", metavar="<DIR>",\
-    help="Path to bowtie2 genome indices to be used in mapping.")
-  parser.add_option("--tophat", action="store", type="string",
-    dest="tophat", help="Path to tophat executable program.", metavar="<FILE>")
+    help="Path to genome index directory (generated by rmeth) to be used in mapping.")
+  parser.add_option("--mapper", action="store", type="string",
+    dest="mapper", help="Path to tophat2/STAR executable program.", metavar="<FILE>")
   parser.add_option("--samtools", action="store", type="string",
     dest="samtools", help="Path to samtools.")
+  parser.add_option("-d", "--directional", action="store_true",
+    dest="directional", help="Library is directional. Default: false.") 
   (opt, args) = parser.parse_args(sys.argv)
 
   # Setup information format
@@ -453,7 +609,7 @@ def main():
   # Initialization of files names, file handlers, temporary directory,
   # option check, path check, etc. Also do BS convert for reads.
   check_genome_index(opt)
-  logging.info("Output directory is set to %s"%opt.outdir)
+  opt.info("Output directory is set to %s"%opt.outdir)
   files = init_files_paths(opt)
 
   # Map reads using tophat
