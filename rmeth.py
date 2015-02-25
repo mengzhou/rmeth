@@ -26,28 +26,28 @@
 import sys, os, re
 import logging, subprocess
 from optparse import OptionParser
-from random import choice
 
 class Files:
-  def __init__(self, outdir, read1, read2 \
-    , isDirectional = True, isPairEnd = False):
+  def __init__(self, outdir, read1, read2, \
+    project_name , isDirectional = True, isPairEnd = False):
     self.idDirectional = isDirectional
     self.isPairEnd = isPairEnd
     self._wd = outdir
     self._wd_read1CT_to_CT = outdir + "/read1CT_to_CTgenome"
     self._wd_read1CT_to_GA = outdir + "/read1CT_to_GAgenome"
-    name1 = re.match("(.+)(\.fastq|\.fq)", read1).group(1)
-    project_name = re.match("(.+?)(_[12])?(?=\.fastq|\.fq)", read1).group(1)
+    self._name1 = re.match("(.+)(\.fastq|\.fq)", read1).group(1)
+    #project_name = re.match("(.+?)(_[12])?(?=\.fastq|\.fq)", read1).group(1)
+    self._project_name = project_name
     # original fastq files
     self._fn_read1 = read1
     # converted fastq files
-    self._fn_read1CT = self._wd + "/%s_CT.fastq"%name1
+    self._fn_read1CT = self._wd + "/%s_CT.fastq"%self._name1
     # original mapped bam files
     # this is specific to STAR
     self._fn_read1CT_to_CT = self._wd_read1CT_to_CT \
-      + "/%s.Aligned.out.bam"%name1
+      + "/Aligned.out.bam"
     self._fn_read1CT_to_GA = self._wd_read1CT_to_GA \
-      + "/%s.Aligned.out.bam"%name1
+      + "/Aligned.out.bam"
     # bam files with only primary mapping
     self._fn_read1CT_to_CT_primary = re.match("(.+)\.bam", \
       self._fn_read1CT_to_CT).group(1) + ".primary.bam"
@@ -63,13 +63,13 @@ class Files:
       self._wd_read1GA_to_CT = outdir + "/read1GA_to_CTgenome"
       self._wd_read1GA_to_GA = outdir + "/read1GA_to_GAgenome"
       # converted fastq files
-      self._fn_read1GA = self._wd + "/%s_GA.fastq"%name1
+      self._fn_read1GA = self._wd + "/%s_GA.fastq"%self._name1
       # original mapped bam files
       # this is specific to STAR
       self._fn_read1GA_to_CT = self._wd_read1GA_to_CT \
-        + "/%s.Aligned.out.bam"%name1
+        + "/Aligned.out.bam"
       self._fn_read1GA_to_GA = self._wd_read1GA_to_GA \
-        + "/%s.Aligned.out.bam"%name1
+        + "/Aligned.out.bam"
       # bam files with only primary mapping
       self._fn_read1GA_to_CT_primary = re.match("(.+)\.bam", \
         self._fn_read1GA_to_CT).group(1) + ".primary.bam"
@@ -92,90 +92,94 @@ class Files:
       self._fn_read1GA_to_GA_compatible = None
 
     # merged bam file
-    self._fn_read1_merged_bam = self._wd + "/%s.merged.bam"%(name1)
+    self._fn_read1_merged_bam = self._wd + "/%s.merged.bam"%(self._name1)
 
     if isPairEnd:
-      self._wd_read2GA_to_CT = outdir + "/read2GA_to_CTgenome"
-      self._wd_read2GA_to_GA = outdir + "/read2GA_to_GAgenome"
-      name2 = re.match("(.+)(\.fastq|\.fq)", read2).group(1)
+      self._wd_read1CTread2GA_to_CT = outdir + "/read1CTread2GA_to_CTgenome"
+      self._wd_read1CTread2GA_to_GA = outdir + "/read1CTread2GA_to_GAgenome"
+      self._name2 = re.match("(.+)(\.fastq|\.fq)", read2).group(1)
       self._fn_read2 = read2
       # converted fastq files
-      self._fn_read2GA = self._wd + "/%s_GA.fastq"%name2
+      self._fn_read2GA = self._wd + "/%s_GA.fastq"%self._name2
       # original mapped bam files
       # this is specific to STAR
-      self._fn_read2GA_to_CT = self._wd_read2GA_to_CT \
-        + "/%s.Aligned.out.bam"%name2
-      self._fn_read2GA_to_GA = self._wd_read2GA_to_GA \
-        + "/%s.Aligned.out.bam"%name2
+      self._fn_read1CTread2GA_to_CT = self._wd_read1CTread2GA_to_CT \
+        + "/Aligned.out.bam"
+      self._fn_read1CTread2GA_to_GA = self._wd_read1CTread2GA_to_GA \
+        + "/Aligned.out.bam"
       # bam files with only primary mapping
-      self._fn_read2GA_to_CT_primary = re.match("(.+)\.bam", \
-        self._fn_read2GA_to_CT).group(1) + ".primary.bam"
-      self._fn_read2GA_to_GA_primary = re.match("(.+)\.bam", \
-        self._fn_read2GA_to_GA).group(1) + ".primary.bam"
+      self._fn_read1CTread2GA_to_CT_primary = re.match("(.+)\.bam", \
+        self._fn_read1CTread2GA_to_CT).group(1) + ".primary.bam"
+      self._fn_read1CTread2GA_to_GA_primary = re.match("(.+)\.bam", \
+        self._fn_read1CTread2GA_to_GA).group(1) + ".primary.bam"
       # bam files with compatible strand
-      self._fn_read2GA_to_CT_compatible = re.match("(.+)\.bam", \
-        self._fn_read2GA_to_CT).group(1) + ".compatible.bam"
-      self._fn_read2GA_to_GA_compatible = re.match("(.+)\.bam", \
-        self._fn_read2GA_to_GA).group(1) + ".compatible.bam"
-
-      # merged bam file
-      self._fn_read2CT_merged_bam = self._wd + "/%s.merged.bam"%(name2)
+      self._fn_read1CTread2GA_to_CT_compatible = re.match("(.+)\.bam", \
+        self._fn_read1CTread2GA_to_CT).group(1) + ".compatible.bam"
+      self._fn_read1CTread2GA_to_GA_compatible = re.match("(.+)\.bam", \
+        self._fn_read1CTread2GA_to_GA).group(1) + ".compatible.bam"
 
       if not isDirectional:
-        self._wd_read2CT_to_CT = outdir + "/read2CT_to_CTgenome"
-        self._wd_read2CT_to_GA = outdir + "/read2CT_to_GAgenome"
+        self._wd_read1GAread2CT_to_CT = outdir + "/read1GAread2CT_to_CTgenome"
+        self._wd_read1GAread2CT_to_GA = outdir + "/read1GAread2CT_to_GAgenome"
         # converted fastq files
-        self._fn_read2CT = self._wd + "/%s_CT.fastq"%name1
+        self._fn_read1GA = self._wd + "/%s_GA.fastq"%self._name2
+        self._fn_read2CT = self._wd + "/%s_CT.fastq"%self._name2
         # original mapped bam files
         # this is specific to STAR
-        self._fn_read2CT_to_CT = self._wd_read2CT_to_CT \
-          + "/%s.Aligned.out.bam"%name2
-        self._fn_read2CT_to_GA = self._wd_read2CT_to_GA \
-          + "/%s.Aligned.out.bam"%name2
+        self._fn_read1GAread2CT_to_CT = self._wd_read1GAread2CT_to_CT \
+          + "/Aligned.out.bam"
+        self._fn_read1GAread2CT_to_GA = self._wd_read1GAread2CT_to_GA \
+          + "/Aligned.out.bam"
         # bam files with only primary mapping
-        self._fn_read2CT_to_CT_primary = re.match("(.+)\.bam", \
-          self._fn_read2CT_to_CT).group(1) + ".primary.bam"
-        self._fn_read2CT_to_GA_primary = re.match("(.+)\.bam", \
-          self._fn_read2CT_to_GA).group(1) + ".primary.bam"
+        self._fn_read1GAread2CT_to_CT_primary = re.match("(.+)\.bam", \
+          self._fn_read1GAread2CT_to_CT).group(1) + ".primary.bam"
+        self._fn_read1GAread2CT_to_GA_primary = re.match("(.+)\.bam", \
+          self._fn_read1GAread2CT_to_GA).group(1) + ".primary.bam"
         # bam files with compatible strand
-        self._fn_read2CT_to_CT_compatible = re.match("(.+)\.bam", \
-          self._fn_read2CT_to_CT).group(1) + ".compatible.bam"
-        self._fn_read2CT_to_GA_compatible = re.match("(.+)\.bam", \
-          self._fn_read2CT_to_GA).group(1) + ".compatible.bam"
+        self._fn_read1GAread2CT_to_CT_compatible = re.match("(.+)\.bam", \
+          self._fn_read1GAread2CT_to_CT).group(1) + ".compatible.bam"
+        self._fn_read1GAread2CT_to_GA_compatible = re.match("(.+)\.bam", \
+          self._fn_read1GAread2CT_to_GA).group(1) + ".compatible.bam"
       else:
-        self._wd_read2CT_to_CT = None
-        self._wd_read2CT_to_GA = None
+        self._fn_read1GA = None
         self._fn_read2CT = None
-        self._fn_read2CT_to_CT = None
-        self._fn_read2CT_to_GA = None
-        self._fn_read2CT_to_CT_primary = None
-        self._fn_read2CT_to_GA_primary = None
-        self._fn_read2CT_to_CT_compatible = None
-        self._fn_read2CT_to_GA_compatible = None
+        self._wd_read1GAread2CT_to_CT = None
+        self._wd_read1GAread2CT_to_GA = None
+        self._fn_read1GAread2CT = None
+        self._fn_read1GAread2CT_to_CT = None
+        self._fn_read1GAread2CT_to_GA = None
+        self._fn_read1GAread2CT_to_CT_primary = None
+        self._fn_read1GAread2CT_to_GA_primary = None
+        self._fn_read1GAread2CT_to_CT_compatible = None
+        self._fn_read1GAread2CT_to_GA_compatible = None
+
       # merged bam file
-      self._fn_read2_merged_bam = self._wd + "/%s.merged.bam"%(name2)
+      self._fn_read1read2_merged_bam = self._wd + \
+        "/%s.merged.bam"%(self._project_name)
 
     else:
+      self._name2 = None
       self._fn_read2 = None
-      self._wd_read2GA_to_CT = None
-      self._wd_read2GA_to_GA = None
+      self._wd_read1CTread2GA_to_CT = None
+      self._wd_read1CTread2GA_to_GA = None
       self._fn_read2GA = None
-      self._fn_read2GA_to_CT = None
-      self._fn_read2GA_to_GA = None
-      self._fn_read2GA_to_CT_primary = None
-      self._fn_read2GA_to_GA_primary = None
-      self._fn_read2GA_to_CT_compatible = None
-      self._fn_read2GA_to_GA_compatible = None
-      self._wd_read2CT_to_CT = None
-      self._wd_read2CT_to_GA = None
       self._fn_read2CT = None
-      self._fn_read2CT_to_CT = None
-      self._fn_read2CT_to_GA = None
-      self._fn_read2CT_to_CT_primary = None
-      self._fn_read2CT_to_GA_primary = None
-      self._fn_read2CT_to_CT_compatible = None
-      self._fn_read2CT_to_GA_compatible = None
-      self._fn_read2_merged_bam = None
+      self._fn_read1CTread2GA_to_CT = None
+      self._fn_read1CTread2GA_to_GA = None
+      self._fn_read1CTread2GA_to_CT_primary = None
+      self._fn_read1CTread2GA_to_GA_primary = None
+      self._fn_read1CTread2GA_to_CT_compatible = None
+      self._fn_read1CTread2GA_to_GA_compatible = None
+      self._wd_read1GAread2CT_to_CT = None
+      self._wd_read1GAread2CT_to_GA = None
+      self._fn_read1GAread2CT = None
+      self._fn_read1GAread2CT_to_CT = None
+      self._fn_read1GAread2CT_to_GA = None
+      self._fn_read1GAread2CT_to_CT_primary = None
+      self._fn_read1GAread2CT_to_GA_primary = None
+      self._fn_read1GAread2CT_to_CT_compatible = None
+      self._fn_read1GAread2CT_to_GA_compatible = None
+      self._fn_read1read2_merged_bam = None
 
     # final output .mr
     self._fn_mr = self._wd + "/%s.mr"%project_name
@@ -188,13 +192,19 @@ class Files:
     return output
 
   def get_file_list(self):
-    fn_list = {"read1":self._fn_read1, "read1CT":self._fn_read1CT, \
+    fn_list = {"project_name":self._project_name, "wd":self._wd, \
+      "wd_read1CT_to_CT":self._wd_read1CT_to_CT, \
+      "wd_read1CT_to_GA":self._wd_read1CT_to_GA, \
+      "name1":self._name1, "read1":self._fn_read1, \
+      "read1CT":self._fn_read1CT, "read1GA":self._fn_read1GA, \
       "read1CT_to_CT":self._fn_read1CT_to_CT, \
       "read1CT_to_GA":self._fn_read1CT_to_GA, \
       "read1CT_to_CT_primary":self._fn_read1CT_to_CT_primary, \
       "read1CT_to_GA_primary":self._fn_read1CT_to_GA_primary, \
       "read1CT_to_CT_compatible":self._fn_read1CT_to_CT_compatible, \
       "read1CT_to_GA_compatible":self._fn_read1CT_to_GA_compatible, \
+      "wd_read1GA_to_CT":self._wd_read1GA_to_CT, \
+      "wd_read1GA_to_GA":self._wd_read1GA_to_GA, \
       "read1GA":self._fn_read1GA, \
       "read1GA_to_CT":self._fn_read1GA_to_CT, \
       "read1GA_to_GA":self._fn_read1GA_to_GA, \
@@ -203,21 +213,25 @@ class Files:
       "read1GA_to_CT_compatible":self._fn_read1GA_to_CT_compatible, \
       "read1GA_to_GA_compatible":self._fn_read1GA_to_GA_compatible, \
       "read1_merged_bam":self._fn_read1_merged_bam,\
-      "read2":self._fn_read2, "read2CT":self._fn_read2CT, \
-      "read2GA":self._fn_read2GA, \
-      "read2GA_to_CT":self._fn_read2GA_to_CT, \
-      "read2GA_to_GA":self._fn_read2GA_to_GA, \
-      "read2GA_to_CT_primary":self._fn_read2GA_to_CT_primary, \
-      "read2GA_to_GA_primary":self._fn_read2GA_to_GA_primary, \
-      "read2GA_to_CT_compatible":self._fn_read2GA_to_CT_compatible, \
-      "read2GA_to_GA_compatible":self._fn_read2GA_to_GA_compatible, \
-      "read2CT_to_CT":self._fn_read2CT_to_CT, \
-      "read2CT_to_GA":self._fn_read2CT_to_GA, \
-      "read2CT_to_CT_primary":self._fn_read2CT_to_CT_primary, \
-      "read2CT_to_GA_primary":self._fn_read2CT_to_GA_primary, \
-      "read2CT_to_CT_compatible":self._fn_read2CT_to_CT_compatible, \
-      "read2CT_to_GA_compatible":self._fn_read2CT_to_GA_compatible, \
-      "read2_merged_bam":self._fn_read2_merged_bam, \
+      "name2":self._name2, "read2":self._fn_read2, \
+      "wd_read1CTread2GA_to_CT":self._wd_read1CTread2GA_to_CT, \
+      "wd_read1CTread2GA_to_GA":self._wd_read1CTread2GA_to_GA, \
+      "read2CT":self._fn_read2CT, "read2GA":self._fn_read2GA, \
+      "read1CTread2GA_to_CT":self._fn_read1CTread2GA_to_CT, \
+      "read1CTread2GA_to_GA":self._fn_read1CTread2GA_to_GA, \
+      "read1CTread2GA_to_CT_primary":self._fn_read1CTread2GA_to_CT_primary, \
+      "read1CTread2GA_to_GA_primary":self._fn_read1CTread2GA_to_GA_primary, \
+      "read1CTread2GA_to_CT_compatible":self._fn_read1CTread2GA_to_CT_compatible, \
+      "read1CTread2GA_to_GA_compatible":self._fn_read1CTread2GA_to_GA_compatible, \
+      "wd_read1GAread2CT_to_CT":self._wd_read1GAread2CT_to_CT, \
+      "wd_read1GAread2CT_to_GA":self._wd_read1GAread2CT_to_GA, \
+      "read1GAread2CT_to_CT":self._fn_read1GAread2CT_to_CT, \
+      "read1GAread2CT_to_GA":self._fn_read1GAread2CT_to_GA, \
+      "read1GAread2CT_to_CT_primary":self._fn_read1GAread2CT_to_CT_primary, \
+      "read1GAread2CT_to_GA_primary":self._fn_read1GAread2CT_to_GA_primary, \
+      "read1GAread2CT_to_CT_compatible":self._fn_read1GAread2CT_to_CT_compatible, \
+      "read1GAread2CT_to_GA_compatible":self._fn_read1GAread2CT_to_GA_compatible, \
+      "read1read2_merged_bam":self._fn_read1read2_merged_bam, \
       "mr":self._fn_mr
       }
     return fn_list
