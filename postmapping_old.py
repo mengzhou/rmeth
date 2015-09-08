@@ -50,7 +50,11 @@ class CIGAR:
 
     return (new_seq, new_qual)
 
-  def apply_with_qual_junction(self, seq, qual):
+  def apply_with_qual_junction(self, seq, qual, is_a_rich):
+    if is_a_rich:
+      order = -1
+    else:
+      order = 1
     new_seq = ""
     new_qual = ""
     index = 0
@@ -58,7 +62,7 @@ class CIGAR:
     op_copy = ['M', '=', 'X']
     op_skip = ['S', 'I', 'H', 'P']
     op_pad = ['D']
-    for i in self.cigar:
+    for i in self.cigar[::order]:
       length = int(i[0])
       operation = i[1]
       if operation in op_copy:
@@ -102,8 +106,26 @@ def rev_comp( str ):
   str = str.upper()
   return "".join([comp[str[::-1][i]] for i in xrange(len(str))])
 
+def flip_a_rich(is_a_rich, seq, qual, strand):
+  if not is_a_rich:
+    return (seq, qual, strand)
+  else:
+    seq = rev_comp(seq)
+    qual = qual[::-1]
+    if strand == '+':
+      strand = '-'
+    else:
+      strand = '+'
+    
+    return (seq, qual, strand)
+
 def main():
   in_sam_fh = open(sys.argv[1], 'r')
+  a_rich = sys.argv[2]
+  if a_rich == '2':
+    is_a_rich = True
+  else:
+    is_a_rich = False
   #in_fastq_fh = open(sys.argv[2], 'r')
 
   #read_name_seq = read_fastq_all_reads(in_fastq_fh)
@@ -138,7 +160,9 @@ def main():
         chr = f[2]
         start = int(f[3]) - 1
         cigar_op = CIGAR(f[5])
-        junction = cigar_op.apply_with_qual_junction(seq, qual)
+        (seq, new_qual, strand) = flip_a_rich(is_a_rich, \
+          seq, qual, strand)
+        junction = cigar_op.apply_with_qual_junction(seq, qual, is_a_rich)
         if flag & 0x10:
           seq_order = range(len(junction[0])-1, -1, -1)
         else:
@@ -176,19 +200,21 @@ def main():
   if flag & 0x10:
     strand = '-'
     #seq = rev_comp(read_name_seq[name])
-    #seq = rev_comp(f[-1])
-    seq = rev_comp(f[9])
+    seq = rev_comp(f[-1])
+    #seq = rev_comp(f[9])
     qual = f[10][::-1]
   else:
     strand = '+'
     #seq = read_name_seq[name]
-    #seq = f[-1]
-    seq = f[9]
+    seq = f[-1]
+    #seq = f[9]
     qual = f[10]
   chr = f[2]
   start = int(f[3]) - 1
   cigar_op = CIGAR(f[5])
-  junction = cigar_op.apply_with_qual_junction(seq, qual)
+  (seq, new_qual, strand) = flip_a_rich(is_a_rich, \
+    seq, qual, strand)
+  junction = cigar_op.apply_with_qual_junction(seq, qual, is_a_rich)
   if flag & 0x10:
     seq_order = range(len(junction[0])-1, -1, -1)
   else:

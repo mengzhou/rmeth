@@ -29,30 +29,66 @@ import sys, os
 import logging, subprocess
 from optparse import OptionParser
 
-def build_index(opt, files):
-  """Build bowtie2 index.
+def build_index_star(opt, files):
+  """Build STAR index.
   """
-  additional_pars = "-q"
-  args_ct = [opt.bowtie2, additional_pars, \
-    files["ctgenome"], opt.outdir_CT + "/CTgenome"]
-  args_ga = [opt.bowtie2, additional_pars, \
-    files["gagenome"], opt.outdir_GA + "/GAgenome"]
+  pars_ct = ["--runMode", "genomeGenerate",\
+    "--runThreadN", "4",\
+    "--genomeDir", opt.outdir_CT,\
+    "--genomeFastaFiles", files["ctgenome"]\
+    ]
+  pars_ga = ["--runMode", "genomeGenerate",\
+    "--runThreadN", "4",\
+    "--genomeDir", opt.outdir_GA,\
+    "--genomeFastaFiles", files["gagenome"]\
+    ]
+  args_ct = [opt.buildexe] + pars_ct
+  args_ga = [opt.buildexe] + pars_ga
 
-  logging.info("Building genome index of C to T converted genome...")
-  logging.info("Command: %s"%" " .join(args_ct))
+  opt.info("Building genome index of C to T converted genome...")
+  opt.info("Command: %s"%" " .join(args_ct))
   try:
+    os.chdir(opt.outdir_CT)
     subprocess.check_call(args_ct)
   except subprocess.CalledProcessError:
-    logging.error("An error occured in building index. " + \
+    opt.error("An error occured in building index. " + \
       "Please check your arguments:\n%s"%" ".join(args_ct))
     sys.exit(1)
 
-  logging.info("Building genome index of G to A converted genome...")
-  logging.info("Command: %s"%" " .join(args_ga))
+  opt.info("Building genome index of G to A converted genome...")
+  opt.info("Command: %s"%" " .join(args_ga))
+  try:
+    os.chdir(opt.outdir_GA)
+    subprocess.check_call(args_ga)
+  except subprocess.CalledProcessError:
+    opt.error("An error occured in building index. " + \
+      "Please check your arguments:\n%s"%" ".join(args_ga))
+    sys.exit(1)
+
+def build_index_bt2(opt, files):
+  """Build bowtie2 index.
+  """
+  additional_pars = "-q"
+  args_ct = [opt.buildexe, additional_pars, \
+    files["ctgenome"], opt.outdir_CT + "/CTgenome"]
+  args_ga = [opt.buildexe, additional_pars, \
+    files["gagenome"], opt.outdir_GA + "/GAgenome"]
+
+  opt.info("Building genome index of C to T converted genome...")
+  opt.info("Command: %s"%" " .join(args_ct))
+  try:
+    subprocess.check_call(args_ct)
+  except subprocess.CalledProcessError:
+    opt.error("An error occured in building index. " + \
+      "Please check your arguments:\n%s"%" ".join(args_ct))
+    sys.exit(1)
+
+  opt.info("Building genome index of G to A converted genome...")
+  opt.info("Command: %s"%" " .join(args_ga))
   try:
     subprocess.check_call(args_ga)
   except subprocess.CalledProcessError:
-    logging.error("An error occured in building index. " + \
+    opt.error("An error occured in building index. " + \
       "Please check your arguments:\n%s"%" ".join(args_ga))
     sys.exit(1)
 
@@ -78,6 +114,7 @@ def bs_conversion(infh, outfh, C_to_T):
 def init_files_paths(opt):
   """Initialize the list for files and file handlers.
   """
+  opt.outdir = os.path.abspath(opt.outdir)
   if not os.path.exists(opt.outdir):
     os.makedirs(opt.outdir)
   opt.outdir_CT = opt.outdir + "/CTgenome"
@@ -95,15 +132,15 @@ def init_files_paths(opt):
   files["ctgenome"] = opt.outdir_CT + "/CTgenome.fa"
   files["gagenome"] = opt.outdir_GA + "/GAgenome.fa"
 
-  logging.info("Performing bisulfite conversion for reference genome.")
+  opt.info("Performing bisulfite conversion for reference genome.")
   fhs["genome"] = open(files["genome"], 'r')
   if os.path.isfile(files["ctgenome"]):
-    logging.warn("Converted genome %s exists and is skipped."%files["ctgenome"])
+    opt.warn("Converted genome %s exists and is skipped."%files["ctgenome"])
   else:
     fhs["ctgenome"] = open(files["ctgenome"], 'w')
     bs_conversion(fhs["genome"], fhs["ctgenome"], True)
   if os.path.isfile(files["gagenome"]):
-    logging.warn("Converted genome %s exists and is skipped."%files["gagenome"])
+    opt.warn("Converted genome %s exists and is skipped."%files["gagenome"])
   else:
     fhs["gagenome"] = open(files["gagenome"], 'w')
     bs_conversion(fhs["genome"], fhs["gagenome"], False)
@@ -129,34 +166,59 @@ def which(program):
   return None
 
 def opt_validation(parser, opt):
-  if not opt.bowtie2 and not opt.ref:
+  # Setup information format
+  logging.basicConfig(level=20,
+    format='[%(levelname)-5s][%(asctime)s] %(message)s ',
+    datefmt='%H:%M:%S', stream=sys.stderr, filemode="w")
+  opt.info = logging.info
+  opt.error = logging.error
+  opt.warn = logging.warn
+  if not opt.buildexe and not opt.ref:
     parser.print_help()
     sys.exit(0)
-  if not opt.bowtie2:
+  if not opt.buildexe:
     if which("bowtie2-build"):
-      opt.bowtie2 = which("bowtie2-build")
-      logging.warn("--bowtie2-build is not specified but found. %s will be used."\
-        %opt.bowtie2)
+      opt.buildexe = which("bowtie2-build")
+      opt.warn("--build is not specified but bowtie2-build is found. "+\
+        "%s will be used."%opt.buildexe)
+      opt.isBowtie = True
+    elif which("STAR"):
+      opt.buildexe = which("STAR")
+      opt.warn("--build is not specified but STAR is found. "+\
+        "%s will be used."%opt.buildexe)
+      opt.isBowtie = False
     else:
-      logging.error("Must set the path to bowtie2-build executable with --bowtie2-build!")
+      opt.error("Must set the path to bowtie2-build executable "+\
+        "or STAR executable with --build!")
       sys.exit(1)
-  if not is_exe(opt.bowtie2):
-    logging.error(\
-      "%s is not bowtie2-build executable file. Please check your path!"%opt.bowtie2)
+  if not is_exe(opt.buildexe):
+    opt.error(\
+      "%s is not an executable file. Please check your path!"%opt.buildexe)
     sys.exit(1)
+  else:
+    if opt.buildexe.endswith("STAR"):
+      opt.isBowtie = False
+    elif opt.buildexe.endswith("bowtie2-build"):
+      opt.isBowtie = True
+    else:
+      opt.error("Cannot determine which mapper %s belongs to. "%opt.buildexe)
+      sys.exit(1)
   if not opt.ref:
-    logging.error("Please specify one FASTA file using -r.")
+    opt.error("Please specify one FASTA file using -r.")
     sys.exit(1)
   if not os.path.isfile(opt.ref):
-    logging.error("%s does not exist. Please check your path!"%opt.ref)
+    opt.error("%s does not exist or is not a file. "+\
+      "Please check your path!"%opt.ref)
     sys.exit(1)
   opt.outdir = opt.outdir.rstrip("/")
 
+  return opt
+
 def main():
-  usage = "Usage: %prog --bowtie2-build <path_to_bowtie2-build> -r <reference_fasta> -n <index_name>"
+  usage = "Usage: %prog --build <path_to_build_program> -r <reference_fasta>"
   parser = OptionParser(usage=usage)
-  parser.add_option("-b", "--bowtie2-build", action="store", type="string",
-    dest="bowtie2", help="Path to bowtie2-build executable program.",
+  parser.add_option("-b", "--build", action="store", type="string",
+    dest="buildexe", help="Path to bowtie2-build executable program, or STAR executable.",
     metavar="<FILE>")
   parser.add_option("-r", "--reference", action="store", type="string",
     dest="ref", help="Path to reference genome FASTA file. Must be a single file.",\
@@ -166,21 +228,19 @@ def main():
     default="./rmeth_genome")
   (opt, args) = parser.parse_args(sys.argv)
 
-  # Setup information format
-  logging.basicConfig(level=20,
-    format='[%(levelname)-5s][%(asctime)s] %(message)s ',
-    datefmt='%H:%M:%S', stream=sys.stderr, filemode="w")
-
   # Option validation
-  opt_validation(parser, opt)
+  opt = opt_validation(parser, opt)
 
   # Initialize working directory and BS convert genome
   files = init_files_paths(opt)
 
   # Build bowtie2 indices for converted FASTA
-  build_index(opt, files)
+  if opt.isBowtie:
+    build_index_bt2(opt, files)
+  else:
+    build_index_star(opt, files)
 
-  logging.info("Finished.")
+  opt.info("Finished.")
 
 if __name__ == '__main__':
   main()

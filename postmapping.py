@@ -50,8 +50,43 @@ class CIGAR:
 
     return (new_seq, new_qual)
 
+  def apply_with_qual_junction(self, seq, qual, is_a_rich):
+    if is_a_rich:
+      order = -1
+    else:
+      order = 1
+    new_seq = ""
+    new_qual = ""
+    index = 0
+    junction = [[], []]
+    op_copy = ['M', '=', 'X']
+    op_skip = ['S', 'I', 'H', 'P']
+    op_pad = ['D']
+    for i in self.cigar[::order]:
+      length = int(i[0])
+      operation = i[1]
+      if operation in op_copy:
+        new_seq += seq[index:index+length]
+        new_qual += qual[index:index+length]
+        index += length
+      elif operation in op_skip:
+        index += length
+      elif operation in op_pad:
+        new_seq += "N"*length
+        new_qual += "B"*length
+      else:
+        # N for junction
+        junction[0].append([new_seq, new_qual])
+        junction[1].append(length)
+        new_seq = ""
+        new_qual = ""
+
+    junction[0].append([new_seq, new_qual])
+
+    return junction
+
 class PostMapping:
-  def __init__(self, files, idDirectional, isPairEnd, \
+  def __init__(self, files, isDirectional, isPairEnd, \
     mapper, samtools):
     self.files = files
     logging.basicConfig(level=20,
@@ -65,18 +100,18 @@ class PostMapping:
     self.isDirectional = isDirectional
     self.isPairEnd = isPairEnd
 
-  def build(self):
-    """Build mapped read file from mapping results.
+  def to_mr(self):
+    """Convert mapped BAM to .mr format.
     """
     if self.isPairEnd:
-      self._build_pe()
+      self._to_mr_pe()
     else:
-      self._build_se()
+      self._to_mr_se()
 
-  def _build_pe():
+  def _to_mr_pe():
     return
 
-  def _build_se():
+  def _to_mr_se():
     """Criteria for filtering strand compatiblility:
     (1) Directional
       + strand: CT read on CT genome (flag 0);
@@ -97,27 +132,26 @@ class PostMapping:
       opt.error("An error occured in samtools merging.")
       sys.exit(1)
 
+  def _read_fastq_all_reads(self, infh):
+    """Read FASTQ file and return a dictionary with read name and 
+    corresponding read sequence.
+    """
+    read_name_sequence = {}
+    counter = 0
+    for l in infh:
+      ind = counter%4
+      if ind == 0:
+        name = l[1:].strip().replace(" ", "_")
+      elif ind == 1:
+        read_name_sequence[name] = l.strip()
+      counter += 1
+  
+    return read_name_sequence
 
-def read_fastq_all_reads(infh):
-  """Read FASTQ file and return a dictionary with read name and 
-  corresponding read sequence.
-  """
-  read_name_sequence = {}
-  counter = 0
-  for l in infh:
-    ind = counter%4
-    if ind == 0:
-      name = l[1:].strip().replace(" ", "_")
-    elif ind == 1:
-      read_name_sequence[name] = l.strip()
-    counter += 1
-
-  return read_name_sequence
-
-def rev_comp( str ):
-  comp = {'A':'T', 'C':'G', 'G':'C', 'T':'A', 'N':'N'}
-  str = str.upper()
-  return "".join([comp[str[::-1][i]] for i in xrange(len(str))])
+  def _rev_comp( str ):
+    comp = {'A':'T', 'C':'G', 'G':'C', 'T':'A', 'N':'N'}
+    str = str.upper()
+    return "".join([comp[str[::-1][i]] for i in xrange(len(str))])
 
 def main():
   in_sam_fh = open(sys.argv[1], 'r')

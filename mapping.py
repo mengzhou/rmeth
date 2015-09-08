@@ -89,20 +89,20 @@ class Mapping:
   def _call_mapper_se(self, read, index, output):
     cmd = self._set_mapping_args_se(read, index, output)
     self.info(" ".join(cmd))
-    #try:
-    #  subprocess.check_call(cmd)
-    #except subprocess.CalledProcessError:
-    #  self.error("An error occured for command:\n%s"%cmd)
-    #  sys.exit(1)
+    try:
+      subprocess.check_call(cmd)
+    except subprocess.CalledProcessError:
+      self.error("An error occured for command:\n%s"%cmd)
+      sys.exit(1)
 
   def _call_mapper_pe(self, read1, read2, index, output):
     cmd = self._set_mapping_args_pe(read1, read2, index, output)
     self.info(" ".join(cmd))
-    #try:
-    #  subprocess.check_call(cmd)
-    #except subprocess.CalledProcessError:
-    #  self.error("An error occured for command:\n%s"%cmd)
-    #  sys.exit(1)
+    try:
+      subprocess.check_call(cmd)
+    except subprocess.CalledProcessError:
+      self.error("An error occured for command:\n%s"%cmd)
+      sys.exit(1)
 
   def _set_mapping_args_se(self, read, index, output):
     return ["-p", "value"]
@@ -161,10 +161,10 @@ class MappingWithStar(Mapping):
   def _set_mapping_args_se(self, read, index, output):
     #prefix = re.match("(.+?\.)(Aligned.out.bam)?", output).group(1)
     args = {\
-      "--runThreadN":"8", \
+      "--runThreadN":"4", \
       "--readFilesIn":read, \
       "--genomeDir":index, \
-      "--outFileNamePrefix":output + "/", \
+      "--outFileNamePrefix":output[:output.rfind("/")+1], \
       "--outFilterIntronMotifs":"RemoveNoncanonical", \
       #"--clip3pAdapterSeq":"", \
       "--outSAMstrandField":"intronMotif", \
@@ -173,16 +173,17 @@ class MappingWithStar(Mapping):
     cmd = [self.mapper]
     for i in args.keys():
       cmd.append(i)
-      cmd.append(args[i])
+      for j in args[i].split(" "):
+        cmd.append(j)
     return cmd
 
   def _set_mapping_args_pe(self, read1, read2, index, output):
     #prefix = re.match("(.+?\.)(Aligned.out.bam)?", output).group(1)
     args = {\
-      "--runThreadN":"8", \
+      "--runThreadN":"4", \
       "--readFilesIn":" ".join((read1, read2)), \
       "--genomeDir":index, \
-      "--outFileNamePrefix":output + "/", \
+      "--outFileNamePrefix":output[:output.rfind("/")+1], \
       "--outFilterIntronMotifs":"RemoveNoncanonical", \
       #"--clip3pAdapterSeq":"", \
       "--outSAMstrandField":"intronMotif", \
@@ -191,5 +192,6 @@ class MappingWithStar(Mapping):
     cmd = [self.mapper]
     for i in args.keys():
       cmd.append(i)
-      cmd.append(args[i])
+      for j in args[i].split(" "):
+        cmd.append(j)
     return cmd

@@ -26,6 +26,8 @@
 import sys, os, re
 import logging, subprocess
 from optparse import OptionParser
+from mapping import *
+from postmapping import *
 
 class Files:
   def __init__(self, outdir, read1, read2, \
@@ -468,17 +470,34 @@ def check_genome_index(opt):
   """Check if the bowtie2 genome indices for tophat are ready.
   Will check if CT and GA converted genomes exist.
   """
-  opt.ctindex = opt.index.rstrip("/") + "/CTgenome/CTgenome"
-  opt.gaindex = opt.index.rstrip("/") + "/GAgenome/GAgenome"
+  opt.index = os.path.abspath(opt.index).rstrip("/")
+  if opt.isTophat:
+    # search for bowtie2 index
+    opt.ctindex = opt.index + "/CTgenome/CTgenome"
+    opt.gaindex = opt.index + "/GAgenome/GAgenome"
 
-  if not os.path.isfile(opt.ctindex + ".1.bt2"):
-    opt.error("C to T genome index is not found. Please check -i parameter!")
-    opt.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
-    sys.exit(1)
-  if not os.path.isfile(opt.gaindex + ".1.bt2"):
-    opt.error("G to A genome index is not found. Please check -i parameter!")
-    opt.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
-    sys.exit(1)
+    if not os.path.isfile(opt.ctindex + ".1.bt2"):
+      opt.error("C to T genome index is not found. Please check -i parameter!")
+      opt.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
+      sys.exit(1)
+    if not os.path.isfile(opt.gaindex + ".1.bt2"):
+      opt.error("G to A genome index is not found. Please check -i parameter!")
+      opt.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
+      sys.exit(1)
+  else:
+    # search for STAR index
+    opt.ctindex = opt.index + "/CTgenome"
+    opt.gaindex = opt.index + "/GAgenome"
+    if not os.path.isfile(opt.ctindex + "/SA"):
+      opt.error("C to T genome index is not found. Please check -i parameter!")
+      opt.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
+      sys.exit(1)
+    if not os.path.isfile(opt.gaindex + "/SA"):
+      opt.error("G to A genome index is not found. Please check -i parameter!")
+      opt.error("-i <dir> must be a directory including C_to_T and G_to_A directories.")
+      sys.exit(1)
+
+  return opt
 
 def fastq_read_name_process(name, mate):
   """Process read name in FASTQ files. Main purpose is to deal with spaces and
@@ -510,27 +529,26 @@ def bs_conversion(infh, outfh, C_to_T, mate):
 def init_files_paths(opt):
   """Initialize the list for files and file handlers.
   """
-  if not os.path.exists(opt.outdir):
-    os.makedirs(opt.outdir)
+  safe_mkdir(opt.outdir)
   opt.mapped_dir_read1CT_to_CT = opt.outdir + "/read1CT_to_CTgenome"
   opt.mapped_dir_read1CT_to_GA = opt.outdir + "/read1CT_to_GAgenome"
-  os.makedirs(opt.mapped_dir_read1CT_to_CT)
-  os.makedirs(opt.mapped_dir_read1CT_to_GA)
+  safe_mkdir(opt.mapped_dir_read1CT_to_CT)
+  safe_mkdir(opt.mapped_dir_read1CT_to_GA)
   if not opt.directional:
     opt.mapped_dir_read1GA_to_CT = opt.outdir + "/read1GA_to_CTgenome"
     opt.mapped_dir_read1GA_to_GA = opt.outdir + "/read1GA_to_GAgenome"
-    os.makedirs(opt.mapped_dir_read1GA_to_CT)
-    os.makedirs(opt.mapped_dir_read1GA_to_GA)
+    safe_mkdir(opt.mapped_dir_read1GA_to_CT)
+    safe_mkdir(opt.mapped_dir_read1GA_to_GA)
   if opt.isPairEnd:
     opt.mapped_dir_read2GA_to_CT = opt.outdir + "/read2GA_to_CTgenome"
     opt.mapped_dir_read2GA_to_GA = opt.outdir + "/read2GA_to_GAgenome"
-    os.makedirs(opt.mapped_dir_read2GA_to_CT)
-    os.makedirs(opt.mapped_dir_read2GA_to_GA)
+    safe_mkdir(opt.mapped_dir_read2GA_to_CT)
+    safe_mkdir(opt.mapped_dir_read2GA_to_GA)
     if not opt.directional:
       opt.mapped_dir_read2CT_to_CT = opt.outdir + "/read2CT_to_CTgenome"
       opt.mapped_dir_read2CT_to_GA = opt.outdir + "/read2CT_to_GAgenome"
-      os.makedirs(opt.mapped_dir_read2CT_to_CT)
-      os.makedirs(opt.mapped_dir_read2CT_to_GA)
+      safe_mkdir(opt.mapped_dir_read2CT_to_CT)
+      safe_mkdir(opt.mapped_dir_read2CT_to_GA)
 
   file_list = ["read1", "read2", "read1CT", "read1GA", "read2CT", "read2GA"]
   files = {}.fromkeys(file_list)
@@ -538,11 +556,15 @@ def init_files_paths(opt):
 
   files["read1"] = opt.read1
   files["read2"] = opt.read2
-  files["read1CT"] = re.sub("\.fastq|\.fq","",opt.read1) + "_CT.fastq"
-  files["read1GA"] = re.sub("\.fastq|\.fq","",opt.read1) + "_GA.fastq"
+  files["read1CT"] = os.path.join(opt.outdir, \
+    re.sub("\.fastq|\.fq","",opt.read1) + "_CT.fastq")
+  files["read1GA"] = os.path.join(opt.outdir, \
+    re.sub("\.fastq|\.fq","",opt.read1) + "_GA.fastq")
   if opt.isPairEnd:
-    files["read2CT"] = re.sub("\.fastq|\.fq","",opt.read2) + "_CT.fastq"
-    files["read2GA"] = re.sub("\.fastq|\.fq","",opt.read2) + "_GA.fastq"
+    files["read2CT"] = os.path.join(opt.outdir, \
+      re.sub("\.fastq|\.fq","",opt.read2) + "_CT.fastq")
+    files["read2GA"] = os.path.join(opt.outdir, \
+      re.sub("\.fastq|\.fq","",opt.read2) + "_GA.fastq")
   try:
     fhs["read1"] = open(files["read1"], 'r')
   except:
@@ -587,6 +609,10 @@ def init_files_paths(opt):
 
   return files
 
+def safe_mkdir(path):
+  if not os.path.exists(path):
+    os.makedirs(path)
+
 def is_exe(file):
   return os.path.isfile(file) and os.access(file, os.X_OK)
 
@@ -605,17 +631,20 @@ def opt_validation(parser, opt):
   if not opt.read1 and not opt.mapper and not opt.samtools:
     parser.print_help()
     sys.exit(0)
-  opt.info = opt.info
-  opt.warn = opt.warn
-  opt.error = opt.error
+  opt.info = logging.info
+  opt.warn = logging.warn
+  opt.error = logging.error
+
   if not opt.mapper:
     if which("tophat2"):
       opt.mapper = which("tophat2")
+      opt.isTophat = True
       opt.warn("--mapper is not specified but tophat2 is found. %s will be used."\
         %opt.mapper)
     else:
       if which("STAR"):
         opt.mapper = which("STAR")
+        opt.isTophat = False
         opt.warn("--mapper is not specified but STAR is found. %s will be used."\
           %opt.mapper)
       else:
@@ -625,6 +654,12 @@ def opt_validation(parser, opt):
     opt.error(\
       "%s is not an executable file. Please check your path!"%opt.mapper)
     sys.exit(1)
+  else:
+    if opt.mapper.endswith("STAR"):
+      opt.isTophat = False
+    else:
+      opt.isTophat = True
+
   if not opt.samtools:
     if which("samtools"):
       opt.samtools = which("samtools")
@@ -637,6 +672,7 @@ def opt_validation(parser, opt):
     opt.error(\
       "%s is not samtools executable file. Please check your path!"%opt.samtools)
     sys.exit(1)
+
   if not opt.read1:
     opt.error("Please specify at least one FASTQ file using -1.")
     sys.exit(1)
@@ -645,8 +681,12 @@ def opt_validation(parser, opt):
   else:
     opt.isPairEnd = True
 
+  opt.outdir = os.path.abspath(opt.outdir).rstrip("/")
+
+  return opt
+
 def main():
-  usage = "Usage: %prog [-p \"tophat options\"] --tophat <path to tophat> " + \
+  usage = "Usage: %prog [-p \"tophat options\"] --mapper <path to mapper> " + \
       "--samtools <path to samtools> " + \
       "-i <bowtie2 index> -1 <read1> [-2 read2] [other options]"
   parser = OptionParser(usage=usage)
@@ -680,26 +720,27 @@ def main():
     datefmt='%H:%M:%S', stream=sys.stderr, filemode="w")
 
   # Option validation
-  opt_validation(parser, opt)
+  opt = opt_validation(parser, opt)
 
   # Initialization of files names, file handlers, temporary directory,
   # option check, path check, etc. Also do BS convert for reads.
-  check_genome_index(opt)
+  opt = check_genome_index(opt)
   opt.info("Output directory is set to %s"%opt.outdir)
   files = init_files_paths(opt)
+  files = Files(opt.outdir, opt.read1, opt.read2, "", \
+    opt.directional, opt.isPairEnd)
 
-  # Map reads using tophat
-  map_reads(opt, files)
+  # Map reads
+  mapping = MappingWithStar(files, opt.mapper, \
+    opt.directional, opt.isPairEnd, opt.index)
+  mapping.map()
 
-  # Things below need to be done with C++
-  #######################################
   # Filter mapped reads with some quality threshold, and replace the
   # converted sequences to their original ones from FASTQ
   #construct_mapped_reads(opt, files)
-
-  # Load original FASTQ file and the genome to determine methylation
-  #GetMethylationLevel()
-  #######################################
+  #post_mapping = PostMapping(files, opt.directional, opt.isPairEnd, \
+  #  opt.mapper, opt.samtools)
+  #post_mapping.to_mr()
 
   # Output and cleanup
 
